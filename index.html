@@ -1,0 +1,38 @@
+// ===== CONTROLES MOBILE + TECLADO =====
+
+// teclado (mantido)
+document.addEventListener("keydown", e=>{
+  if(e.key==="ArrowLeft") laneIndex--;
+  if(e.key==="ArrowRight") laneIndex++;
+
+  laneIndex = Math.max(0, Math.min(2, laneIndex));
+
+  if(e.key===" " && !jump){
+    jump=true;
+    velocityY=0.25;
+  }
+});
+
+// TOQUE NA TELA
+document.addEventListener("touchstart", e=>{
+  let touchX = e.touches[0].clientX;
+  let width = window.innerWidth;
+
+  // esquerda da tela
+  if(touchX < width * 0.33){
+    laneIndex--;
+  }
+  // direita da tela
+  else if(touchX > width * 0.66){
+    laneIndex++;
+  }
+  // meio = pular
+  else{
+    if(!jump){
+      jump = true;
+      velocityY = 0.25;
+    }
+  }
+
+  laneIndex = Math.max(0, Math.min(2, laneIndex));
+});

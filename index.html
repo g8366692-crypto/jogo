@@ -14,15 +14,19 @@ body { margin:0; overflow:hidden; }
   font-family:Arial;
 }
 
-#gameOver, #win {
+#startScreen, #gameOver, #win, #pauseScreen {
   position:absolute;
   top:50%;
   left:50%;
   transform:translate(-50%,-50%);
   display:none;
   text-align:center;
+  background:white;
+  padding:25px;
+  border-radius:12px;
 }
-button { padding:10px 20px; font-size:16px; }
+
+button { padding:12px 25px; font-size:16px; cursor:pointer; }
 </style>
 </head>
 <body>
@@ -32,234 +36,383 @@ Score: <span id="score">0</span><br>
 Recorde: <span id="record">0</span>
 </div>
 
+<div id="startScreen">
+<h1>🏃 Runner 3D PRO</h1>
+<button onclick="startGame()">Iniciar</button>
+</div>
+
 <div id="gameOver">
-<h1>Game Over</h1>
-<button onclick="location.reload()">Recomeçar</button>
+<h1>💀 Game Over</h1>
+<button onclick="location.reload()">Jogar novamente</button>
 </div>
 
 <div id="win">
 <h1>🏁 FASE CONCLUÍDA</h1>
-<button onclick="startPhase2()">Ir para Fase 2</button>
+<button onclick="startPhase2()">Fase 2</button>
+</div>
+
+<div id="pauseScreen">
+<h1>⏸ PAUSADO</h1>
+<p>Aperte 0 para continuar</p>
 </div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 
 <script>
 
-// CONFIG
-const LANES = [-4, 0, 4];
+const LANES = [-4,0,4];
+let phase = 1;
+let safeStart = 0;
+let streetLights = [];
 
-// RECORD
+let paused = false;
+
 let record = localStorage.getItem("record") || 0;
 document.getElementById("record").innerText = record;
 
-// CENA
+let started = false;
+document.getElementById("startScreen").style.display="block";
+
+function startGame(){
+  started = true;
+  gameRunning = true;
+  document.getElementById("startScreen").style.display="none";
+}
+
+// ===== CENA =====
 let scene = new THREE.Scene();
 scene.background = new THREE.Color(0x87CEEB);
+scene.fog = new THREE.Fog(0x87CEEB, 30, 100);
 
 let camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
-camera.position.set(0,6,10);
 
-let renderer = new THREE.WebGLRenderer();
+let renderer = new THREE.WebGLRenderer({antialias:true});
 renderer.setSize(innerWidth, innerHeight);
 document.body.appendChild(renderer.domElement);
 
-let light = new THREE.AmbientLight(0xffffff,1);
-scene.add(light);
+scene.add(new THREE.AmbientLight(0xffffff,0.7));
 
-// PLAYER
+// ===== PLAYER =====
 let player = new THREE.Group();
+player.scale.set(0.75,0.75,0.75);
 
-let body = new THREE.Mesh(new THREE.BoxGeometry(1,1.5,1), new THREE.MeshBasicMaterial({color:0x00ffff}));
+let body = new THREE.Mesh(new THREE.BoxGeometry(1,1.5,1), new THREE.MeshStandardMaterial({color:0x00ffff}));
 body.position.y=2;
 
-let head = new THREE.Mesh(new THREE.BoxGeometry(0.9,0.9,0.9), new THREE.MeshBasicMaterial({color:0xffcc99}));
+let head = new THREE.Mesh(new THREE.BoxGeometry(0.9,0.9,0.9), new THREE.MeshStandardMaterial({color:0xffcc99}));
 head.position.y=3;
 
-let hair = new THREE.Mesh(new THREE.BoxGeometry(1,0.4,1), new THREE.MeshBasicMaterial({color:0x000000}));
+let hair = new THREE.Mesh(new THREE.BoxGeometry(1,0.4,1), new THREE.MeshStandardMaterial({color:0x111111}));
 hair.position.y=3.5;
 
-let leg1 = new THREE.Mesh(new THREE.BoxGeometry(0.4,1.5,0.4), new THREE.MeshBasicMaterial({color:0x0000ff}));
+let leg1 = new THREE.Mesh(new THREE.BoxGeometry(0.4,1.5,0.4), new THREE.MeshStandardMaterial({color:0x0000ff}));
 leg1.position.set(-0.3,0.75,0);
 
 let leg2 = leg1.clone();
 leg2.position.x=0.3;
 
-player.add(body, head, hair, leg1, leg2);
+player.add(body,head,hair,leg1,leg2);
 scene.add(player);
 
-// ESTRADA
-let road = new THREE.Mesh(
-  new THREE.PlaneGeometry(30,300),
-  new THREE.MeshStandardMaterial({color:0x222222})
-);
+// ===== ESTRADA =====
+let road = new THREE.Mesh(new THREE.PlaneGeometry(30,600), new THREE.MeshStandardMaterial({color:0x2b2b2b}));
 road.rotation.x = -Math.PI/2;
 scene.add(road);
 
-let line = new THREE.Mesh(
-  new THREE.PlaneGeometry(0.4,300),
-  new THREE.MeshBasicMaterial({color:0xffffff})
-);
+let line = new THREE.Mesh(new THREE.PlaneGeometry(0.5,600), new THREE.MeshStandardMaterial({color:0xffffff}));
 line.rotation.x = -Math.PI/2;
-line.position.y = 0.01;
+line.position.y=0.01;
 scene.add(line);
 
-// VAR
-let laneIndex = 1;
-let jump=false;
-let velocityY=0;
-let score=0;
-let speed=0.55;
-let gameRunning=true;
-let obstacles=[];
-let lastZ = -40;
-let phase = 1;
-
-// OBSTÁCULOS
-function createObstacle(){
-
-  let size = Math.random() < 0.4 ? 3 : 1.5;
-  let o = new THREE.Mesh(
-    new THREE.BoxGeometry(size, size, size),
-    new THREE.MeshBasicMaterial({color:0xff0000})
-  );
-
-  let lane = Math.floor(Math.random()*3);
-
-  lastZ -= (phase==1 ? 25 : 18);
-
-  o.position.set(LANES[lane], size/2, lastZ);
-
-  scene.add(o);
-  obstacles.push(o);
+// ===== CIDADE =====
+for(let i=0;i<80;i++){
+  let h = 5 + Math.random()*20;
+  let b = new THREE.Mesh(new THREE.BoxGeometry(4,h,4), new THREE.MeshStandardMaterial({color:0x555555}));
+  let side = Math.random()<0.5 ? -12 : 12;
+  b.position.set(side,h/2,-i*15);
+  scene.add(b);
 }
 
-// CONTROLES TECLADO
+// ===== POSTES OTIMIZADOS =====
+function createStreetLights(){
+
+  streetLights.forEach(l=>scene.remove(l));
+  streetLights=[];
+
+  for(let i=0;i<40;i++){
+
+    let z = -i*20;
+
+    [-8,8].forEach((x,index)=>{
+
+      let pole = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.2,0.2,6),
+        new THREE.MeshStandardMaterial({color:0xaaaaaa})
+      );
+      pole.position.set(x,3,z);
+      scene.add(pole);
+      streetLights.push(pole);
+
+      if(i % 6 === 0 && index === 0){
+        let light = new THREE.PointLight(0xffffaa,1.2,25);
+        light.position.set(x,6,z);
+        scene.add(light);
+        streetLights.push(light);
+      }
+    });
+  }
+}
+
+// ===== VAR =====
+let laneIndex=1;
+let jump=false;
+let velocityY=0;
+let jumpBuffer=false;
+
+let score=0;
+let speed=0.25;
+let obstacles=[];
+let gameRunning=false;
+let currentZ=-120;
+
+let finishZ=null;
+let cinematic=false;
+
+let camLocked=false;
+let camPos=new THREE.Vector3();
+let camLook=new THREE.Vector3();
+
+// ===== SPAWN =====
+function createObstacle(){
+
+  if(finishZ !== null && player.position.z <= finishZ + 50) return;
+
+  let spacing;
+  let density;
+
+  if(phase === 1){
+    if(score < 800){ spacing=20; density=0.3; }
+    else if(score < 1800){ spacing=16; density=0.5; }
+    else{ spacing=14; density=0.65; }
+  } else {
+    if(score < 1000){ spacing=16; density=0.6; }
+    else if(score < 2500){ spacing=13; density=0.75; }
+    else{ spacing=13; density=0.7; }
+  }
+
+  currentZ -= spacing;
+
+  let lanesIndex=[0,1,2];
+  let safeLane=lanesIndex[Math.floor(Math.random()*3)];
+
+  lanesIndex.forEach(l=>{
+    if(l!==safeLane && Math.random()<density){
+      let color = phase===1?0xff0000:0x00ffff;
+
+      let o = new THREE.Mesh(
+        new THREE.BoxGeometry(2,2,2),
+        new THREE.MeshStandardMaterial({color:color})
+      );
+
+      o.position.set(LANES[l],1,currentZ);
+      scene.add(o);
+      obstacles.push(o);
+    }
+  });
+}
+
+for(let i=0;i<12;i++) createObstacle();
+
+// ===== FINAL =====
+function spawnFinish(){
+  finishZ = player.position.z - 60;
+
+  let pole = new THREE.Mesh(new THREE.BoxGeometry(0.3,6,0.3), new THREE.MeshStandardMaterial({color:0xffffff}));
+  pole.position.set(6,3,finishZ - 5);
+  scene.add(pole);
+
+  let flag = new THREE.Mesh(new THREE.BoxGeometry(3,2,0.2), new THREE.MeshStandardMaterial({color:0xff0000}));
+  flag.position.set(7.5,4.5,finishZ - 5);
+  scene.add(flag);
+
+  let tunnel = new THREE.Mesh(new THREE.BoxGeometry(14,8,20), new THREE.MeshStandardMaterial({color:0x222222}));
+  tunnel.position.set(0,4,finishZ - 80);
+  scene.add(tunnel);
+}
+
+// ===== CONTROLES =====
 document.addEventListener("keydown", e=>{
+
+  if(e.key === "0"){
+    paused = !paused;
+    document.getElementById("pauseScreen").style.display = paused ? "block" : "none";
+  }
+
+  if(cinematic || paused) return;
+
   if(e.key==="ArrowLeft") laneIndex--;
   if(e.key==="ArrowRight") laneIndex++;
 
-  laneIndex = Math.max(0, Math.min(2, laneIndex));
+  laneIndex=Math.max(0,Math.min(2,laneIndex));
 
-  if(e.key===" " && !jump){
-    jump=true;
-    velocityY=0.25;
-  }
+  if(e.key===" ") jumpBuffer=true;
 });
 
-// CONTROLES CELULAR
-document.addEventListener("touchstart", e=>{
-  let x = e.touches[0].clientX;
-  let w = window.innerWidth;
-
-  if(x < w*0.33) laneIndex--;
-  else if(x > w*0.66) laneIndex++;
-  else{
-    if(!jump){
-      jump=true;
-      velocityY=0.25;
-    }
-  }
-
-  laneIndex = Math.max(0, Math.min(2, laneIndex));
-});
-
-// COLISÃO
+// ===== COLISÃO =====
 function collide(o){
-  let dx = Math.abs(o.position.x - player.position.x);
-  let dz = Math.abs(o.position.z);
-  let top = o.position.y + (o.geometry.parameters.height/2);
+  if(cinematic || safeStart>0) return false;
 
-  if(dx < 1 && dz < 1){
-    if(player.position.y > top - 0.2) return false;
+  let dx=Math.abs(o.position.x-player.position.x);
+  let dz=Math.abs(o.position.z-player.position.z);
+
+  if(dx<1 && dz<1.5){
+    if(player.position.y>1.8) return false;
     return true;
   }
   return false;
 }
 
-// FASE 2
-function startPhase2(){
-  document.getElementById("win").style.display="none";
-
-  phase = 2;
-  score = 0;
-  speed = 0.75;
-  gameRunning = true;
-  lastZ = -40;
-
-  obstacles.forEach(o=>scene.remove(o));
-  obstacles = [];
-
-  scene.background = new THREE.Color(0x000022);
-  light.intensity = 0.4;
-}
-
-// LOOP
+// ===== LOOP =====
 let runTime=0;
 
 function animate(){
   requestAnimationFrame(animate);
 
-  if(gameRunning){
+  if(gameRunning && started && !paused){
+
+    if(safeStart>0) safeStart--;
 
     score++;
     document.getElementById("score").innerText=score;
 
-    speed += (phase==1 ? 0.00015 : 0.00025);
+    speed += phase === 2 ? 0.0001 : 0.00015;
 
-    player.position.x += (LANES[laneIndex] - player.position.x)*0.2;
+    player.position.z -= cinematic?0.5:speed;
+    player.position.x += (LANES[laneIndex]-player.position.x)*0.25;
 
-    // NÃO SAIR DA PISTA
-    player.position.x = Math.max(-4, Math.min(4, player.position.x));
+    if(jumpBuffer && player.position.y<=0.15){
+      jump=true;
+      velocityY=0.36;
+      jumpBuffer=false;
+    }
 
-    // pulo
     if(jump){
       player.position.y+=velocityY;
-      velocityY-=0.012;
-
+      velocityY-=0.02;
       if(player.position.y<=0){
         player.position.y=0;
         jump=false;
       }
     }
 
-    // animação corrida
     runTime+=0.3;
     leg1.rotation.x=Math.sin(runTime)*1.5;
     leg2.rotation.x=-Math.sin(runTime)*1.5;
 
-    // obstáculos
-    obstacles.forEach(o=>{
-      o.position.z+=speed;
+    for(let i = obstacles.length - 1; i >= 0; i--){
+      let o = obstacles[i];
+
+      o.position.z += speed;
 
       if(collide(o)){
         gameRunning=false;
         document.getElementById("gameOver").style.display="block";
       }
-    });
 
-    obstacles = obstacles.filter(o=>{
-      if(o.position.z>20){
+      if(o.position.z > player.position.z + 10){
         scene.remove(o);
-        return false;
+        obstacles.splice(i,1);
       }
-      return true;
-    });
-
-    // SPAWN CONTROLADO (sem ficar impossível)
-    if(obstacles.length < (phase==1 ? 8 : 12) && Math.random()<0.03){
-      createObstacle();
     }
 
-    // VITÓRIA
-    if(phase==1 && score >= 3000){
+    if(!finishZ){
+      while(obstacles.length<12){
+        createObstacle();
+      }
+    }
+
+    if(finishZ && player.position.z <= finishZ+50){
+      obstacles.forEach(o=>scene.remove(o));
+      obstacles=[];
+    }
+
+    // 🔥 FASE 1 INTACTA
+    if(phase===1 && score>=2500 && !finishZ) spawnFinish();
+
+    // 🔥 FASE 2 AGORA FINALIZA NO 3000
+    if(phase===2 && score>=3000 && !finishZ) spawnFinish();
+
+    if(finishZ && player.position.z <= finishZ && !cinematic){
+      cinematic=true;
+      camLocked=true;
+      camPos.copy(camera.position);
+      camLook.set(player.position.x,2.5,player.position.z-10);
+    }
+
+    if(!camLocked){
+      camera.position.set(player.position.x,4.5,player.position.z+8);
+      camera.lookAt(player.position.x,2.8,player.position.z-15);
+    } else {
+      camera.position.copy(camPos);
+      camera.lookAt(camLook);
+    }
+
+    if(cinematic && player.position.z < finishZ - 90){
       gameRunning=false;
+
+      if(phase===1){
+        document.getElementById("win").innerHTML =
+          "<h1>🏁 FASE CONCLUÍDA</h1><button onclick='startPhase2()'>Fase 2</button>";
+      } else {
+        document.getElementById("win").innerHTML =
+          "<h1>🏁 FASE CONCLUÍDA</h1><button onclick='alert(\"Fase 3 em breve 😎\")'>Fase 3</button>";
+      }
+
       document.getElementById("win").style.display="block";
     }
+
+    road.position.z = player.position.z;
+    line.position.z = player.position.z;
   }
 
-  camera.lookAt(0,2,0);
   renderer.render(scene,camera);
+}
+
+// ===== FASE 2 =====
+function startPhase2(){
+
+  phase = 2;
+
+  score = 0;
+  speed = 0.25;
+
+  finishZ = null;
+  cinematic = false;
+  camLocked = false;
+
+  safeStart = 120;
+
+  started = true;
+  gameRunning = true;
+
+  player.position.set(0,0,0);
+  laneIndex = 1;
+
+  obstacles.forEach(o=>scene.remove(o));
+  obstacles = [];
+
+  currentZ = -150;
+
+  document.getElementById("win").style.display="none";
+
+  scene.background = new THREE.Color(0x0b0f1a);
+  scene.fog = new THREE.Fog(0x0b0f1a, 20, 90);
+
+  streetLights.forEach(l=>scene.remove(l));
+  streetLights=[];
+  createStreetLights();
+
+  for(let i=0;i<12;i++) createObstacle();
 }
 
 animate();

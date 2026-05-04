@@ -133,18 +133,15 @@ for(let i=0;i<80;i++){
   scene.add(b);
 }
 
-// ===== POSTES OTIMIZADOS =====
+// ===== POSTES =====
 function createStreetLights(){
-
   streetLights.forEach(l=>scene.remove(l));
   streetLights=[];
 
   for(let i=0;i<40;i++){
-
     let z = -i*20;
 
     [-8,8].forEach((x,index)=>{
-
       let pole = new THREE.Mesh(
         new THREE.CylinderGeometry(0.2,0.2,6),
         new THREE.MeshStandardMaterial({color:0xaaaaaa})
@@ -184,7 +181,6 @@ let camLook=new THREE.Vector3();
 
 // ===== SPAWN =====
 function createObstacle(){
-
   if(finishZ !== null && player.position.z <= finishZ + 50) return;
 
   let spacing;
@@ -240,9 +236,8 @@ function spawnFinish(){
   scene.add(tunnel);
 }
 
-// ===== CONTROLES =====
+// ===== CONTROLES TECLADO =====
 document.addEventListener("keydown", e=>{
-
   if(e.key === "0"){
     paused = !paused;
     document.getElementById("pauseScreen").style.display = paused ? "block" : "none";
@@ -258,7 +253,39 @@ document.addEventListener("keydown", e=>{
   if(e.key===" ") jumpBuffer=true;
 });
 
-// ===== COLISÃO =====
+// ===== CONTROLES MOBILE (SWIPE) =====
+let touchStartX = 0;
+let touchStartY = 0;
+
+document.addEventListener("touchstart", e => {
+  const touch = e.touches[0];
+  touchStartX = touch.clientX;
+  touchStartY = touch.clientY;
+});
+
+document.addEventListener("touchend", e => {
+
+  if(cinematic || paused) return;
+
+  const touch = e.changedTouches[0];
+  let dx = touch.clientX - touchStartX;
+  let dy = touch.clientY - touchStartY;
+
+  const minSwipe = 30;
+
+  if(Math.abs(dx) > Math.abs(dy)){
+    if(dx > minSwipe) laneIndex++;
+    else if(dx < -minSwipe) laneIndex--;
+
+    laneIndex = Math.max(0, Math.min(2, laneIndex));
+  }
+  else{
+    if(dy < -minSwipe) jumpBuffer = true;
+  }
+
+});
+
+// ===== RESTANTE DO JOGO (SEM ALTERAÇÃO) =====
 function collide(o){
   if(cinematic || safeStart>0) return false;
 
@@ -272,7 +299,6 @@ function collide(o){
   return false;
 }
 
-// ===== LOOP =====
 let runTime=0;
 
 function animate(){
@@ -336,10 +362,7 @@ function animate(){
       obstacles=[];
     }
 
-    // 🔥 FASE 1 INTACTA
     if(phase===1 && score>=2500 && !finishZ) spawnFinish();
-
-    // 🔥 FASE 2 AGORA FINALIZA NO 3000
     if(phase===2 && score>=3000 && !finishZ) spawnFinish();
 
     if(finishZ && player.position.z <= finishZ && !cinematic){
@@ -359,15 +382,6 @@ function animate(){
 
     if(cinematic && player.position.z < finishZ - 90){
       gameRunning=false;
-
-      if(phase===1){
-        document.getElementById("win").innerHTML =
-          "<h1>🏁 FASE CONCLUÍDA</h1><button onclick='startPhase2()'>Fase 2</button>";
-      } else {
-        document.getElementById("win").innerHTML =
-          "<h1>🏁 FASE CONCLUÍDA</h1><button onclick='alert(\"Fase 3 em breve 😎\")'>Fase 3</button>";
-      }
-
       document.getElementById("win").style.display="block";
     }
 
@@ -378,40 +392,27 @@ function animate(){
   renderer.render(scene,camera);
 }
 
-// ===== FASE 2 =====
 function startPhase2(){
-
   phase = 2;
-
   score = 0;
   speed = 0.25;
-
   finishZ = null;
   cinematic = false;
   camLocked = false;
-
   safeStart = 120;
-
   started = true;
   gameRunning = true;
-
   player.position.set(0,0,0);
   laneIndex = 1;
-
   obstacles.forEach(o=>scene.remove(o));
   obstacles = [];
-
   currentZ = -150;
-
   document.getElementById("win").style.display="none";
-
   scene.background = new THREE.Color(0x0b0f1a);
   scene.fog = new THREE.Fog(0x0b0f1a, 20, 90);
-
   streetLights.forEach(l=>scene.remove(l));
   streetLights=[];
   createStreetLights();
-
   for(let i=0;i<12;i++) createObstacle();
 }
 

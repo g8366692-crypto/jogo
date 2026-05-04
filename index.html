@@ -1,6 +1,140 @@
-// ===== CONTROLES MOBILE + TECLADO =====
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+<meta charset="UTF-8">
+<title>Runner 3D PRO</title>
 
-// teclado (mantido)
+<style>
+body { margin:0; overflow:hidden; }
+
+#ui {
+  position:absolute;
+  top:10px;
+  left:10px;
+  font-family:Arial;
+}
+
+#gameOver, #win {
+  position:absolute;
+  top:50%;
+  left:50%;
+  transform:translate(-50%,-50%);
+  display:none;
+  text-align:center;
+}
+button { padding:10px 20px; font-size:16px; }
+</style>
+</head>
+<body>
+
+<div id="ui">
+Score: <span id="score">0</span><br>
+Recorde: <span id="record">0</span>
+</div>
+
+<div id="gameOver">
+<h1>Game Over</h1>
+<button onclick="location.reload()">Recomeçar</button>
+</div>
+
+<div id="win">
+<h1>🏁 FASE CONCLUÍDA</h1>
+<button onclick="startPhase2()">Ir para Fase 2</button>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+<script>
+
+// CONFIG
+const LANES = [-4, 0, 4];
+
+// RECORD
+let record = localStorage.getItem("record") || 0;
+document.getElementById("record").innerText = record;
+
+// CENA
+let scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87CEEB);
+
+let camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 1000);
+camera.position.set(0,6,10);
+
+let renderer = new THREE.WebGLRenderer();
+renderer.setSize(innerWidth, innerHeight);
+document.body.appendChild(renderer.domElement);
+
+let light = new THREE.AmbientLight(0xffffff,1);
+scene.add(light);
+
+// PLAYER
+let player = new THREE.Group();
+
+let body = new THREE.Mesh(new THREE.BoxGeometry(1,1.5,1), new THREE.MeshBasicMaterial({color:0x00ffff}));
+body.position.y=2;
+
+let head = new THREE.Mesh(new THREE.BoxGeometry(0.9,0.9,0.9), new THREE.MeshBasicMaterial({color:0xffcc99}));
+head.position.y=3;
+
+let hair = new THREE.Mesh(new THREE.BoxGeometry(1,0.4,1), new THREE.MeshBasicMaterial({color:0x000000}));
+hair.position.y=3.5;
+
+let leg1 = new THREE.Mesh(new THREE.BoxGeometry(0.4,1.5,0.4), new THREE.MeshBasicMaterial({color:0x0000ff}));
+leg1.position.set(-0.3,0.75,0);
+
+let leg2 = leg1.clone();
+leg2.position.x=0.3;
+
+player.add(body, head, hair, leg1, leg2);
+scene.add(player);
+
+// ESTRADA
+let road = new THREE.Mesh(
+  new THREE.PlaneGeometry(30,300),
+  new THREE.MeshStandardMaterial({color:0x222222})
+);
+road.rotation.x = -Math.PI/2;
+scene.add(road);
+
+let line = new THREE.Mesh(
+  new THREE.PlaneGeometry(0.4,300),
+  new THREE.MeshBasicMaterial({color:0xffffff})
+);
+line.rotation.x = -Math.PI/2;
+line.position.y = 0.01;
+scene.add(line);
+
+// VAR
+let laneIndex = 1;
+let jump=false;
+let velocityY=0;
+let score=0;
+let speed=0.55;
+let gameRunning=true;
+let obstacles=[];
+let lastZ = -40;
+let phase = 1;
+
+// OBSTÁCULOS
+function createObstacle(){
+
+  let size = Math.random() < 0.4 ? 3 : 1.5;
+  let o = new THREE.Mesh(
+    new THREE.BoxGeometry(size, size, size),
+    new THREE.MeshBasicMaterial({color:0xff0000})
+  );
+
+  let lane = Math.floor(Math.random()*3);
+
+  lastZ -= (phase==1 ? 25 : 18);
+
+  o.position.set(LANES[lane], size/2, lastZ);
+
+  scene.add(o);
+  obstacles.push(o);
+}
+
+// CONTROLES TECLADO
 document.addEventListener("keydown", e=>{
   if(e.key==="ArrowLeft") laneIndex--;
   if(e.key==="ArrowRight") laneIndex++;
@@ -13,26 +147,123 @@ document.addEventListener("keydown", e=>{
   }
 });
 
-// TOQUE NA TELA
+// CONTROLES CELULAR
 document.addEventListener("touchstart", e=>{
-  let touchX = e.touches[0].clientX;
-  let width = window.innerWidth;
+  let x = e.touches[0].clientX;
+  let w = window.innerWidth;
 
-  // esquerda da tela
-  if(touchX < width * 0.33){
-    laneIndex--;
-  }
-  // direita da tela
-  else if(touchX > width * 0.66){
-    laneIndex++;
-  }
-  // meio = pular
+  if(x < w*0.33) laneIndex--;
+  else if(x > w*0.66) laneIndex++;
   else{
     if(!jump){
-      jump = true;
-      velocityY = 0.25;
+      jump=true;
+      velocityY=0.25;
     }
   }
 
   laneIndex = Math.max(0, Math.min(2, laneIndex));
 });
+
+// COLISÃO
+function collide(o){
+  let dx = Math.abs(o.position.x - player.position.x);
+  let dz = Math.abs(o.position.z);
+  let top = o.position.y + (o.geometry.parameters.height/2);
+
+  if(dx < 1 && dz < 1){
+    if(player.position.y > top - 0.2) return false;
+    return true;
+  }
+  return false;
+}
+
+// FASE 2
+function startPhase2(){
+  document.getElementById("win").style.display="none";
+
+  phase = 2;
+  score = 0;
+  speed = 0.75;
+  gameRunning = true;
+  lastZ = -40;
+
+  obstacles.forEach(o=>scene.remove(o));
+  obstacles = [];
+
+  scene.background = new THREE.Color(0x000022);
+  light.intensity = 0.4;
+}
+
+// LOOP
+let runTime=0;
+
+function animate(){
+  requestAnimationFrame(animate);
+
+  if(gameRunning){
+
+    score++;
+    document.getElementById("score").innerText=score;
+
+    speed += (phase==1 ? 0.00015 : 0.00025);
+
+    player.position.x += (LANES[laneIndex] - player.position.x)*0.2;
+
+    // NÃO SAIR DA PISTA
+    player.position.x = Math.max(-4, Math.min(4, player.position.x));
+
+    // pulo
+    if(jump){
+      player.position.y+=velocityY;
+      velocityY-=0.012;
+
+      if(player.position.y<=0){
+        player.position.y=0;
+        jump=false;
+      }
+    }
+
+    // animação corrida
+    runTime+=0.3;
+    leg1.rotation.x=Math.sin(runTime)*1.5;
+    leg2.rotation.x=-Math.sin(runTime)*1.5;
+
+    // obstáculos
+    obstacles.forEach(o=>{
+      o.position.z+=speed;
+
+      if(collide(o)){
+        gameRunning=false;
+        document.getElementById("gameOver").style.display="block";
+      }
+    });
+
+    obstacles = obstacles.filter(o=>{
+      if(o.position.z>20){
+        scene.remove(o);
+        return false;
+      }
+      return true;
+    });
+
+    // SPAWN CONTROLADO (sem ficar impossível)
+    if(obstacles.length < (phase==1 ? 8 : 12) && Math.random()<0.03){
+      createObstacle();
+    }
+
+    // VITÓRIA
+    if(phase==1 && score >= 3000){
+      gameRunning=false;
+      document.getElementById("win").style.display="block";
+    }
+  }
+
+  camera.lookAt(0,2,0);
+  renderer.render(scene,camera);
+}
+
+animate();
+
+</script>
+</body>
+</html>
